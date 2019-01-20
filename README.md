@@ -51,4 +51,6 @@ pip install -r requirements.txt
 
 ## Como usar
 
-`TDB`
+```
+scrapy runspider src/lattes_spider.py -o pesquisadores.json
+```
