@@ -10,10 +10,10 @@ class LattesSpider(scrapy.Spider):
         yield {
             'nome': response.css('h2.nome:first-child::text').extract_first(),
             'bolsista': response.css('h2.nome:nth-of-type(2) span::text').extract_first(),
-            'atualizacao': self.get_ultima_atiizacao(response)
+            'atualizacao': self.get_ultima_atualizacao(response),
         }
 
-    def get_ultima_atiizacao(self, response):
+    def get_ultima_atualizacao(self, response):
         content = response.css('ul.informacoes-autor li:last-child *::text').extract()
         data = ""
         if len(content) > 1:
