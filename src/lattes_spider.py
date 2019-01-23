@@ -1,5 +1,5 @@
 # coding=utf-8
-
+# Teste Paulo
 import scrapy
 
 class LattesSpider(scrapy.Spider):
