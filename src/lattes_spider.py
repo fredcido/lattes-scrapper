@@ -2,13 +2,22 @@
 
 import scrapy
 import re
+import os
+import json_csv
 
 ANO_INICIAL=2013
 ANO_FINAL=2017
 
+__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+
 class LattesSpider(scrapy.Spider):
     name = 'lattesspider'
-    start_urls = ['http://buscatextual.cnpq.br/buscatextual/visualizacv.do?id=K4706420E7']
+    file = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+
+    start_urls = [l.strip() for l in open(os.path.join(__location__, 'profiles.txt')).readlines()]
+
+    def closed(self, reason):
+        json_csv.transform()
 
     def parse(self, response):
         yield {
@@ -35,26 +44,41 @@ class LattesSpider(scrapy.Spider):
 
     def extract_data(self, response):
         generic_ones = {
-            'CapitulosLivrosPublicados': 'Capítulos de livros publicados',
-            'TrabalhosPublicadosAnaisCongresso': 'Trabalhos completos publicados em anais de congressos',
-            'TrabalhosPublicadosAnaisCongresso': 'Resumos expandidos publicados em anais de congressos',
-            'TrabalhosPublicadosAnaisCongresso': 'Resumos publicados em anais de congressos',
-            'ApresentacoesTrabalho': 'Apresentações de Trabalho',
+            'Capítulos de livros publicados': 'CapitulosLivrosPublicados',
+            'Trabalhos completos publicados em anais de congressos': 'TrabalhosPublicadosAnaisCongresso',
+            'Resumos expandidos publicados em anais de congressos': 'TrabalhosPublicadosAnaisCongresso',
+            'Resumos publicados em anais de congressos': 'TrabalhosPublicadosAnaisCongresso',
+            'Apresentações de Trabalho': 'ApresentacoesTrabalho',
         }
 
         data = {
             'Artigos completos publicados em periódicos': self.extract_artigos(response),
-            'Projetos de pesquisa': self.extract_projetos(response),
+            'Projetos de pesquisa': self.extract_projetos(response, 'ProjetosPesquisa'),
+            'Projetos de ensino': self.extract_projetos(response, 'ProjetosExtensao'),
+            'Participação em bancas de trabalhos de conclusão': self.extract_bancas_eventos(response, 'ParticipacaoBancasTrabalho'),
+            'Participação em eventos, congressos, exposições e feiras': self.extract_bancas_eventos(response, 'ParticipacaoEventos'),
+            'Orientações e supervisões concluídas': self.extract_bancas_eventos(response, 'Orientacoesconcluidas'),
         }
 
         for key, value in generic_ones.iteritems():
-            items = self.extract_cita_artigos(response, key)
-            data[value] = items
+            items = self.extract_cita_artigos(response, value, key)
+            data[key] = items
 
         return data
 
-    def extract_projetos(self, response):
-        container = response.css('a[name="ProjetosPesquisa"]').xpath('following-sibling::*[2]')
+    def extract_bancas_eventos(self, response, titulo):
+        next_item = response.css('a[name="%s"]' % titulo).xpath('parent::*').css('.cita-artigos').xpath('following-sibling::*[2]')
+        valid_data = []
+        while len(next_item) > 0 and len(next_item.xpath("self::div[contains(@class, 'inst_back')]").extract()) < 1:
+            content = self.trata_text(next_item.css('.layout-cell-pad-5 *::text').extract())
+            if self.validate_year(content):
+                valid_data.append(content)
+            next_item = next_item.xpath('following-sibling::*[1]')
+        
+        return valid_data
+
+    def extract_projetos(self, response, projeto):
+        container = response.css('a[name="%s"]' % projeto).xpath('following-sibling::*[2]')
         children = container.css('.layout-cell-3')
         valid_data = []
         for child in children:
@@ -65,24 +89,26 @@ class LattesSpider(scrapy.Spider):
             ano_ini = anos.split(" - ")[0]
             ano_fim = anos.split(" - ")[1]
             if ano_fim == "Atual":
-                ano_fim = 2018
+                ano_fim = "2018"
 
             if self.validate_year(ano_ini) or self.validate_year(ano_fim):
-                data = " ".join(child.xpath('following-sibling::*[1]').css('*::text').extract())
+                data = self.trata_text(child.xpath('following-sibling::*[1]').css('*::text').extract())
                 valid_data.append(data)
 
         return valid_data
 
 
-    def extract_cita_artigos(self, response, item):
+    def extract_cita_artigos(self, response, item, title):
         cita_artigos = response.css('div.cita-artigos')
         valid_data = []
         for artigo in cita_artigos:
             if len(artigo.css("a[name='%s']" % item).extract()) > 0:
+                titulo = self.trata_text(artigo.css('b *::text').extract())
+                if title.decode('utf-8') not in titulo:
+                    continue
                 next_item = artigo.xpath('following-sibling::*[1]')
                 while len(next_item) > 0 and len(next_item.xpath("self::div[contains(@class, 'cita-artigos')]").extract()) < 1:
-                    content = next_item.css('.layout-cell-pad-5 *::text').extract()
-                    text = " ".join(content)
+                    text = self.trata_text(next_item.css('.layout-cell-pad-5 *::text').extract())
                     if self.validate_year(text):
                         valid_data.append(text)
                     next_item = next_item.xpath('following-sibling::*[1]')
@@ -90,7 +116,7 @@ class LattesSpider(scrapy.Spider):
 
     def extract_artigos(self, response):
         artigos = response.css('#artigos-completos .artigo-completo .layout-cell-11 .layout-cell-pad-5')
-        data = [" ".join(artigo.css('*::text').extract()) for artigo in artigos]
+        data = [self.trata_text(artigo.css('*::text').extract()) for artigo in artigos]
         return self.filter_data(data)
     
     def filter_data(self, data):
@@ -106,3 +132,8 @@ class LattesSpider(scrapy.Spider):
             return False
         ano = int(match.groups()[-1])
         return ano >= ANO_INICIAL and ano <= ANO_FINAL
+
+    def trata_text(self, texto):
+        if isinstance(texto, list):
+            texto = " ".join(texto)
+        return texto
