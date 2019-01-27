@@ -1,4 +1,6 @@
-import csv
+# encoding=utf8
+
+import unicodecsv as csv
 import os
 import json
 
@@ -10,14 +12,14 @@ def transform():
   rows = []
   for item in data:
       if header is None:
-          header = [text.encode('utf-8') for text in list(item['data'].keys())]
+          header = list(item['data'].keys())
       row = [
           item['nome'],
           item['atualizacao'],
           item['link'],
           item['bolsista'],
       ]
-      row = [text.encode('utf-8') if text is not None else "N/A" for text in row]
+      row = [text if text is not None else "N/A" for text in row]
       for title, items in item['data'].iteritems():
           row.append(len(items))
       rows.append(row)

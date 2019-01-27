@@ -5,8 +5,10 @@ import re
 import os
 import json_csv
 
-ANO_INICIAL=2013
-ANO_FINAL=2017
+ANO_INICIAL = 2013
+ANO_FINAL = 2017
+
+FEED_EXPORT_ENCODING = 'utf-8'
 
 __location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
@@ -55,9 +57,9 @@ class LattesSpider(scrapy.Spider):
             'Artigos completos publicados em periódicos': self.extract_artigos(response),
             'Projetos de pesquisa': self.extract_projetos(response, 'ProjetosPesquisa'),
             'Projetos de ensino': self.extract_projetos(response, 'ProjetosExtensao'),
-            'Participação em bancas de trabalhos de conclusão': self.extract_bancas_eventos(response, 'ParticipacaoBancasTrabalho'),
-            'Participação em eventos, congressos, exposições e feiras': self.extract_bancas_eventos(response, 'ParticipacaoEventos'),
-            'Orientações e supervisões concluídas': self.extract_bancas_eventos(response, 'Orientacoesconcluidas'),
+            'Participação em bancas de trabalhos de conclusão': self.extract_participacao(response, 'ParticipacaoBancasTrabalho'),
+            'Participação em eventos, congressos, exposições e feiras': self.extract_participacao(response, 'ParticipacaoEventos'),
+            'Orientações e supervisões concluídas': self.extract_participacao(response, 'Orientacoesconcluidas'),
         }
 
         for key, value in generic_ones.iteritems():
@@ -66,15 +68,14 @@ class LattesSpider(scrapy.Spider):
 
         return data
 
-    def extract_bancas_eventos(self, response, titulo):
-        next_item = response.css('a[name="%s"]' % titulo).xpath('parent::*').css('.cita-artigos').xpath('following-sibling::*[2]')
+    def extract_participacao(self, response, titulo):
+        next_item = response.css('a[name="%s"]' % titulo).xpath('following-sibling::*[1]')
         valid_data = []
-        while len(next_item) > 0 and len(next_item.xpath("self::div[contains(@class, 'inst_back')]").extract()) < 1:
+        while len(next_item) > 0 and len(next_item.xpath("self::a").extract()) < 1:
             content = self.trata_text(next_item.css('.layout-cell-pad-5 *::text').extract())
             if self.validate_year(content):
                 valid_data.append(content)
             next_item = next_item.xpath('following-sibling::*[1]')
-        
         return valid_data
 
     def extract_projetos(self, response, projeto):
@@ -127,7 +128,7 @@ class LattesSpider(scrapy.Spider):
         return valid_data
 
     def validate_year(self, text):
-        match = re.match(r'.*([1-3][0-9]{3})', text)
+        match = re.search(r'.*([1-3][0-9]{3})', text)
         if match is None:
             return False
         ano = int(match.groups()[-1])
@@ -136,4 +137,4 @@ class LattesSpider(scrapy.Spider):
     def trata_text(self, texto):
         if isinstance(texto, list):
             texto = " ".join(texto)
-        return texto
+        return texto.strip()
